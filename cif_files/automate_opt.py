@@ -154,7 +154,7 @@ def modify_encut(incar_file_path, file_path):
 # here filename will be cif_file
 def extract_information(filename):
     database_code_pattern = r'^#_database_code_PCD\s+(\d+)'
-    formula_pattern = r"_chemical_formula_structural\s+(\S+)"
+    formula_pattern = r"_chemical_formula_structural\s+'?(.*?)'?\s*$"
 
     database_code = None
     formula = None
@@ -180,15 +180,13 @@ def extract_information(filename):
         raise ValueError("Chemical formula not found in the file.")
     
     # Clean up the formula to create the system name
-    # system_name = re.sub(r'[^\w\s]', '', formula)
-    # system_name = system_name.replace(' ', '')
-    system_name = formula
+    system_name = re.sub(r'[^a-zA-Z0-9]', '', formula)
+    
     # If database code is None, raise an error or handle as needed
     if database_code is None:
         raise ValueError("Database code not found in the file.")
     
     return database_code, system_name
-
 
 def extract_nelect(file_path):
     nelect_value = None
