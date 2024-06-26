@@ -1,0 +1,14 @@
+ISTART = 0
+ICHARG = 2
+EDIFF = 10E-6
+LREAL = FALSE
+NELM = 100
+ALGO = Normal             ! or use IALGO = 38
+
+ISMEAR = 0 
+SIGMA = 0.05
+
+ISPIN = 1                 ! 2:spin- polarized | default: 1
+
+LORBIT = 11
+NBANDS = 96

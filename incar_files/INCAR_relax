@@ -1,0 +1,20 @@
+ISTART = 0
+ICHARG = 2
+EDIFF = 10E-6
+LREAL = FALSE
+NELM = 100
+ALGO = Normal             ! or use IALGO = 38
+
+#smearing information
+ISMEAR = 0 
+SIGMA = 0.05
+ISPIN = 1                 ! 2:spin- polarized | default: 1
+
+#relaxation
+NSW = 40                 !maximum no of ionic steps
+ISIF = 2                  !2: ions; 7:volume; 5:shape; 3:ions, vol, shape
+IBRION = 2                !Ionic movement algorithm: 2:conjugate- gradient algorithm
+EDIFFG = -0.0001          !Force break condition < |EDIFFG|
+PREC = High
+ADDGRID = .TRUE.
+LWAVE = .FALSE.
