@@ -274,6 +274,40 @@ def modify_magmom(incar_file_path):
 
     relax = Path(f"../calculations/{main_directory}/relax")
 
+
+def extract_and_replace_efermi_value(first_file_path, second_file_path):
+    """Extracts the efermi value from the first file and replaces it in the second file."""
+    
+    # Extract the efermi value from the first file
+    with open(first_file_path, 'r') as file:
+        content1 = file.read()
+    
+    pattern = r'<i name="efermi">\s*(\d+\.\d+)\s*</i>'
+    match = re.search(pattern, content1, flags=re.IGNORECASE)
+    if match:
+        efermi_value = match.group(1)
+    else:
+        raise ValueError("efermi value not found in the first file.")
+    
+    # Replace the efermi value in the second file
+    with open(second_file_path, 'r') as file:
+        content2 = file.read()
+
+    pattern = r'(<i name="efermi">\s*)(\d+\.\d+)(\s*</i>)'
+    
+    def replace_efermi(match):
+        return f'{match.group(1)}{efermi_value}{match.group(3)}'
+
+    new_content = re.sub(pattern, replace_efermi, content2, flags=re.IGNORECASE)
+
+    with open(second_file_path, 'w') as file:
+        file.write(new_content)
+
+    print(f"The efermi value {efermi_value} has been extracted from {first_file_path} and replaced in {second_file_path}.")
+
+
+
+
 def plot_band_structure(vasprun_file, output_file):
     """Plot band structure."""
     vaspout = Vasprun(vasprun_file)
@@ -298,9 +332,9 @@ def plot_projected(vasprun_file, output_file):
     vasprun = Vasprun("vasprun.xml", parse_projected_eigen=True)
     band_structure = vasprun.get_band_structure(kpoints_filename="KPOINTS", line_mode=True)
     bs_plotter = BSPlotterProjected(band_structure)
-    bs_plotter.get_projected_plots_dots(dictio={"Ta":["d"]} ,zero_to_efermi= True, ylim=[-1.5,1], marker_size=10.0, )
-    fermi_level = 0
-    plt.axhline(y=fermi_level, color='k', linestyle='--', linewidth=1, label="Fermi Level")
+    # can add band_linewidth here
+    bs_plotter.get_elt_projected_plots(zero_to_efermi= True, ylim=[-2,2])
+    plt.axhline(y=0, color='k', linestyle='--', linewidth=1, label="Fermi Level")
     #plt.legend(loc='best')
     plt.legend().set_visible(False)
     plt.savefig(output_file)
@@ -444,8 +478,10 @@ run_vasp_calculation(f"{wsoc_band}", "job_std.sh")
 
 print("#####################")
 
+extract_and_replace_efermi_value(f"{wsoc_dos}/vasprun.xml", f"{wsoc_band}/vasprun.xml")
 # prepare_directory(f"{wsoc_plots}")
 plot_band_structure(f"{wsoc_band}/vasprun.xml", f"{wsoc_plots}/band.png")
+plot_projected(f"{wsoc_band}/vasprun.xml", f"{wsoc_plots}/band_projected.png")
 
 # Step 5: Band Structure with SOC_scf
 prepare_directory(soc_scf)
@@ -495,6 +531,7 @@ run_vasp_calculation(f"{soc_band}", "job_ncl.sh")
 print("#####################")
 
 prepare_directory(f"{soc_plots}")
+extract_and_replace_efermi_value(f"{soc_scf}/vasprun.xml", f"{soc_band}/vasprun.xml")
 plot_band_structure(f"{soc_band}/vasprun.xml", f"{soc_plots}/band.png")
 
 
