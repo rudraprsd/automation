@@ -13,7 +13,7 @@ from pymatgen.io.vasp.sets import MPRelaxSet
 from pymatgen.io.vasp.inputs import Kpoints, Incar, Potcar
 from pymatgen.symmetry.bandstructure import HighSymmKpath
 from pymatgen.io.vasp.outputs import Vasprun
-from pymatgen.electronic_structure.plotter import BSPlotter
+from pymatgen.electronic_structure.plotter import BSPlotter, DosPlotter, BSPlotterProjected
 import matplotlib.pyplot as plt
 
 def submit_job(script_path):
@@ -255,6 +255,12 @@ def modify_nbands_soc(incar_file_path, outcar_file_path):
         # Add the new NBANDS value at the end
         file.write(f'NBANDS = {nbands}\n')
 
+def dos_kpoints(input_file, output_file, reciprocal_density):
+    structure = Structure.from_file(input_file)
+    new_kpoints = Kpoints.automatic_density_by_vol(structure, reciprocal_density)
+    new_kpoints.write_file(output_file)
+
+
 # As of now not required
 def modify_magmom(incar_file_path):
     """Modify MAGMOM file with custom settings."""
@@ -267,6 +273,7 @@ def modify_magmom(incar_file_path):
 
 
     relax = Path(f"../calculations/{main_directory}/relax")
+
 def plot_band_structure(vasprun_file, output_file):
     """Plot band structure."""
     vaspout = Vasprun(vasprun_file)
@@ -277,6 +284,26 @@ def plot_band_structure(vasprun_file, output_file):
     plt.legend().set_visible(False)
     plt.savefig(output_file)
     plt.close()
+
+def plot_dos(vasprun_file, output_file):
+    vasprun = Vasprun(vasprun_file, parse_projected_eigen=True)
+    complete_dos = vasprun.complete_dos
+    dos_plotter = DosPlotter()
+    dos_plotter.add_dos("Total DOS", complete_dos)
+    # plot = dos_plotter.get_plot()
+    dos_plotter.save_plot(output_file)
+
+
+def plot_projected(vasprun_file, output_file):
+    vasprun = Vasprun("vasprun.xml", parse_projected_eigen=True)
+    band_structure = vasprun.get_band_structure(kpoints_filename="KPOINTS", line_mode=True)
+    bs_plotter = BSPlotterProjected(band_structure)
+    bs_plotter.get_projected_plots_dots(dictio={"Ta":["d"]} ,zero_to_efermi= True, ylim=[-1.5,1], marker_size=10.0, )
+    fermi_level = 0
+    plt.axhline(y=fermi_level, color='k', linestyle='--', linewidth=1, label="Fermi Level")
+    #plt.legend(loc='best')
+    plt.legend().set_visible(False)
+    plt.savefig(output_file)
 
 def rename_file(directory, old_filename, new_filename):
     # Construct the full file path for the old and new filenames
@@ -358,16 +385,12 @@ print("#####################")
 # Step 2: Band Structure SCF
 prepare_directory(f"{wsoc_scf}")
 shutil.copy(f"{relax}/CONTCAR", f"{wsoc_scf}/POSCAR")
-
 shutil.copy("../incar_files/INCAR_scf", f"{wsoc_scf}/INCAR")
-#shutil.copy(f"{relax}/INCAR", f"{wsoc_scf}/")
-
 shutil.copy(f"{relax}/POTCAR", f"{wsoc_scf}/")
 shutil.copy(f"{relax}/KPOINTS", f"{wsoc_scf}/")
 
 # shutil.copy("job_std.sh", f"{wsoc_scf}/")
 
-# need to be changed
 modify_nbands_wsoc(f"{wsoc_scf}/INCAR", f"{relax}/OUTCAR")
 
 print("#####################")
@@ -378,8 +401,29 @@ run_vasp_calculation(f"{wsoc_scf}", "job_std.sh")
 
 print("#####################")
 
+# Step 3: Dos calculation
+prepare_directory(wsoc_dos)
+shutil.copy(f"{relax}/CONTCAR", f"{wsoc_dos}/POSCAR")
+shutil.copy(f"{wsoc_scf}/INCAR", f"{wsoc_dos}/")
+shutil.copy(f"{relax}/POTCAR", f"{wsoc_dos}/")
+# shutil.copy(f"{relax}/KPOINTS", f"{wsoc_dos}/")
+dos_kpoints(f"{wsoc_dos}/POSCAR", f"{wsoc_dos}/KPOINTS", 300)
 
-# Step 3: Band Structure Non-SCF
+modify_incar_from_dict(f"{wsoc_dos}/INCAR", {'ISMEAR': -5, 'LWAVE': FALSE})
+
+print("#####################")
+
+print("calculation for band_scf")
+shutil.copy(job_std, wsoc_dos)
+run_vasp_calculation(f"{wsoc_dos}", "job_std.sh")
+
+print("#####################")
+
+prepare_directory(wsoc_plots)
+plot_dos(f"{wsoc_dos}/vasprun.xml", f"{wsoc_plot}/dos.png")
+
+
+# Step 4: Band Structure Non-SCF
 prepare_directory(f"{wsoc_band}")
 shutil.copy(f"{wsoc_scf}/POSCAR", f"{wsoc_band}/")
 shutil.copy(f"{wsoc_scf}/INCAR", f"{wsoc_band}/")
@@ -400,10 +444,10 @@ run_vasp_calculation(f"{wsoc_band}", "job_std.sh")
 
 print("#####################")
 
-prepare_directory(f"{wsoc_plots}")
+# prepare_directory(f"{wsoc_plots}")
 plot_band_structure(f"{wsoc_band}/vasprun.xml", f"{wsoc_plots}/band.png")
 
-# Step 4: Band Structure with SOC_scf
+# Step 5: Band Structure with SOC_scf
 prepare_directory(soc_scf)
 shutil.copy(f"{wsoc_scf}/POSCAR", f"{soc_scf}/")
 shutil.copy(f"{wsoc_scf}/INCAR", f"{soc_scf}/")
@@ -429,7 +473,7 @@ run_vasp_calculation(f"{soc_scf}", "job_ncl.sh")
 print("#####################")
 
 
-# Step 5: Band Structure with SOC_non_scf
+# Step 6: Band Structure with SOC_non_scf
 prepare_directory(soc_band)
 shutil.copy(f"{soc_scf}/POSCAR", f"{soc_band}/")
 shutil.copy(f"{soc_scf}/INCAR", f"{soc_band}/")
