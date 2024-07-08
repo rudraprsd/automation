@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-import yaml
+# import yaml
 import re
 
 from pymatgen.core import Structure
@@ -128,7 +128,7 @@ def modify_encut(incar_file_path, file_path):
         raise ValueError("No valid ENMAX value found in the provided file.")
 
     encut = int(1.5 * max_enmax)  # Adjust factor (1.3 or 1.5) as needed
-    
+    encut = ((encut + 9) // 10)*10
     # Read the existing INCAR file content
     with open(incar_file_path, 'r') as file:
         lines = file.readlines()
@@ -283,7 +283,7 @@ def extract_and_replace_efermi_value(first_file_path, second_file_path):
         content1 = file.read()
     
     pattern = r'<i name="efermi">\s*(\d+\.\d+)\s*</i>'
-    match = re.search(pattern, content1, flags=re.IGNORECASE)
+    match = re.search(pattern, content1)
     if match:
         efermi_value = match.group(1)
     else:
@@ -298,7 +298,7 @@ def extract_and_replace_efermi_value(first_file_path, second_file_path):
     def replace_efermi(match):
         return f'{match.group(1)}{efermi_value}{match.group(3)}'
 
-    new_content = re.sub(pattern, replace_efermi, content2, flags=re.IGNORECASE)
+    new_content = re.sub(pattern, replace_efermi, content2)
 
     with open(second_file_path, 'w') as file:
         file.write(new_content)
@@ -328,16 +328,15 @@ def plot_dos(vasprun_file, output_file):
     dos_plotter.save_plot(output_file)
 
 
-def plot_projected(vasprun_file, output_file):
-    vasprun = Vasprun("vasprun.xml", parse_projected_eigen=True)
-    band_structure = vasprun.get_band_structure(kpoints_filename="KPOINTS", line_mode=True)
+def plot_projected(vasprun_file, kpoints_file, output_file):
+    vasprun = Vasprun(vasprun_file, parse_projected_eigen=True)
+    band_structure = vasprun.get_band_structure(kpoints_filename=kpoints_file, line_mode=True)
     bs_plotter = BSPlotterProjected(band_structure)
     # can add band_linewidth here
-    bs_plotter.get_elt_projected_plots(zero_to_efermi= True, ylim=[-2,2])
+    bs_plotter.get_projected_plots(zero_to_efermi= True, ylim=[-2,2])
     plt.axhline(y=0, color='k', linestyle='--', linewidth=1, label="Fermi Level")
-    #plt.legend(loc='best')
-    plt.legend().set_visible(False)
-    plt.savefig(output_file)
+    plt.legend(loc='best')
+    plt.savefig(output_file, dpi=400)
 
 def rename_file(directory, old_filename, new_filename):
     # Construct the full file path for the old and new filenames
@@ -348,7 +347,7 @@ def rename_file(directory, old_filename, new_filename):
     os.rename(old_file_path, new_file_path)
 
 '''
-In first directory, there must exist 4 directory:
+In first directory, there must exist 5 directory:
 1. cif_files
 2. calculations
 3. calculated
@@ -392,157 +391,171 @@ job_std = Path("../job_files/job_std.sh")
 job_ncl = Path("../job_files/job_ncl.sh")
 
 # Step 1: Relaxation
-struct = Structure.from_file(filename=cif_file)
-# user_incar_params = ordered_yaml_load('my_incar.yaml')
-relax_set = MPRelaxSet(structure=struct)
-relax_set.write_input(output_dir=f"{relax}")
-# Bring job_std file
-# shutil.copy(job_std, relax)
+def relaxation():
+    struct = Structure.from_file(filename=cif_file)
+    # user_incar_params = ordered_yaml_load('my_incar.yaml')
+    relax_set = MPRelaxSet(structure=struct)
+    relax_set.write_input(output_dir=f"{relax}")
+    # Bring job_std file
+    # shutil.copy(job_std, relax)
 
-# For incar_files
-shutil.copy("../incar_files/INCAR_relax", f"{relax}/INCAR")
+    # For incar_files
+    shutil.copy("../incar_files/INCAR_relax", f"{relax}/INCAR")
 
-# need to be changed
-modify_encut(f"{relax}/INCAR", f"{relax}/POTCAR")
+    # need to be changed
+    modify_encut(f"{relax}/INCAR", f"{relax}/POTCAR")
+    modify_incar_from_dict(f"{relax}/INCAR", {'LWAVE': '.FALSE.'})
 
-#TODO
-# Check what is ibz inside this function.
-setup_kpoints_hsp()   # Advance high symmetry path generation
-print("#####################")
+    #TODO
+    # Check what is ibz inside this function.
+    setup_kpoints_hsp()   # Advance high symmetry path generation
+    print("#####################")
 
-print("calculation for relax")
-shutil.copy(job_std, relax)
-run_vasp_calculation(f"{relax}", "job_std.sh")
+    print("calculation for relax")
+    shutil.copy(job_std, relax)
+    run_vasp_calculation(f"{relax}", "job_std.sh")
 
-print("#####################")
+    print("#####################")
 
 # Step 2: Band Structure SCF
-prepare_directory(f"{wsoc_scf}")
-shutil.copy(f"{relax}/CONTCAR", f"{wsoc_scf}/POSCAR")
-shutil.copy("../incar_files/INCAR_scf", f"{wsoc_scf}/INCAR")
-shutil.copy(f"{relax}/POTCAR", f"{wsoc_scf}/")
-shutil.copy(f"{relax}/KPOINTS", f"{wsoc_scf}/")
+def wsoc_scf_calculation():
+    prepare_directory(f"{wsoc_scf}")
+    shutil.copy(f"{relax}/CONTCAR", f"{wsoc_scf}/POSCAR")
+    shutil.copy("../incar_files/INCAR_scf", f"{wsoc_scf}/INCAR")
+    shutil.copy(f"{relax}/POTCAR", f"{wsoc_scf}/")
+    shutil.copy(f"{relax}/KPOINTS", f"{wsoc_scf}/")
 
-# shutil.copy("job_std.sh", f"{wsoc_scf}/")
+    # shutil.copy("job_std.sh", f"{wsoc_scf}/")
 
-modify_nbands_wsoc(f"{wsoc_scf}/INCAR", f"{relax}/OUTCAR")
+    modify_encut(f"{wsoc_scf}/INCAR", f"{wsoc_scf}/POTCAR")
+    modify_nbands_wsoc(f"{wsoc_scf}/INCAR", f"{relax}/OUTCAR")
 
-print("#####################")
+    print("#####################")
 
-print("calculation for band_scf")
-shutil.copy(job_std, wsoc_scf)
-run_vasp_calculation(f"{wsoc_scf}", "job_std.sh")
+    print("calculation for band_scf")
+    shutil.copy(job_std, wsoc_scf)
+    run_vasp_calculation(f"{wsoc_scf}", "job_std.sh")
 
-print("#####################")
+    print("#####################")
 
 # Step 3: Dos calculation
-prepare_directory(wsoc_dos)
-shutil.copy(f"{relax}/CONTCAR", f"{wsoc_dos}/POSCAR")
-shutil.copy(f"{wsoc_scf}/INCAR", f"{wsoc_dos}/")
-shutil.copy(f"{relax}/POTCAR", f"{wsoc_dos}/")
-# shutil.copy(f"{relax}/KPOINTS", f"{wsoc_dos}/")
-dos_kpoints(f"{wsoc_dos}/POSCAR", f"{wsoc_dos}/KPOINTS", 300)
+def wsoc_dos_calculation():
+    prepare_directory(wsoc_dos)
+    shutil.copy(f"{relax}/CONTCAR", f"{wsoc_dos}/POSCAR")
+    shutil.copy(f"{wsoc_scf}/INCAR", f"{wsoc_dos}/")
+    shutil.copy(f"{relax}/POTCAR", f"{wsoc_dos}/")
+    # shutil.copy(f"{relax}/KPOINTS", f"{wsoc_dos}/")
+    dos_kpoints(f"{wsoc_dos}/POSCAR", f"{wsoc_dos}/KPOINTS", 300)
 
-modify_incar_from_dict(f"{wsoc_dos}/INCAR", {'ISMEAR': -5, 'LWAVE': FALSE})
+    modify_incar_from_dict(f"{wsoc_dos}/INCAR", {'ISMEAR': -5, 'LWAVE': '.FALSE.'})
 
-print("#####################")
+    print("#####################")
 
-print("calculation for band_scf")
-shutil.copy(job_std, wsoc_dos)
-run_vasp_calculation(f"{wsoc_dos}", "job_std.sh")
+    print("calculation for dos")
+    shutil.copy(job_std, wsoc_dos)
+    run_vasp_calculation(f"{wsoc_dos}", "job_std.sh")
 
-print("#####################")
+    print("#####################")
 
-prepare_directory(wsoc_plots)
-plot_dos(f"{wsoc_dos}/vasprun.xml", f"{wsoc_plot}/dos.png")
+    prepare_directory(wsoc_plots)
+    plot_dos(f"{wsoc_dos}/vasprun.xml", f"{wsoc_plots}/dos.png")
 
 
 # Step 4: Band Structure Non-SCF
-prepare_directory(f"{wsoc_band}")
-shutil.copy(f"{wsoc_scf}/POSCAR", f"{wsoc_band}/")
-shutil.copy(f"{wsoc_scf}/INCAR", f"{wsoc_band}/")
-shutil.copy(f"{wsoc_scf}/POTCAR", f"{wsoc_band}/")
-shutil.copy(f"{relax}/KPOINTS_hsp", f"{wsoc_band}/KPOINTS")
-shutil.copy(f"{wsoc_scf}/CHGCAR", f"{wsoc_band}/")
-shutil.copy(f"{wsoc_scf}/WAVECAR", f"{wsoc_band}/")
+def wsoc_band_calculation():
+    prepare_directory(f"{wsoc_band}")
+    shutil.copy(f"{wsoc_scf}/POSCAR", f"{wsoc_band}/")
+    shutil.copy(f"{wsoc_scf}/INCAR", f"{wsoc_band}/")
+    shutil.copy(f"{wsoc_scf}/POTCAR", f"{wsoc_band}/")
+    shutil.copy(f"{relax}/KPOINTS_hsp", f"{wsoc_band}/KPOINTS")
+    shutil.copy(f"{wsoc_scf}/CHGCAR", f"{wsoc_band}/")
+    shutil.copy(f"{wsoc_scf}/WAVECAR", f"{wsoc_band}/")
 
-# shutil.copy("job_std.sh", f"{wsoc_band}/")
+    # shutil.copy("job_std.sh", f"{wsoc_band}/")
 
-modify_incar_from_dict(f"{wsoc_band}/INCAR", {'ISTART': 1,'ICHARG': 11})
+    modify_incar_from_dict(f"{wsoc_band}/INCAR", {'ISTART': 1,'ICHARG': 11, 'LWAVE': '.FALSE.'})
 
-print("#####################")
+    print("#####################")
 
-print("calculation for band_non_scf")
-shutil.copy(job_std, wsoc_band)
-run_vasp_calculation(f"{wsoc_band}", "job_std.sh")
+    print("calculation for band_non_scf")
+    shutil.copy(job_std, wsoc_band)
+    run_vasp_calculation(f"{wsoc_band}", "job_std.sh")
 
-print("#####################")
+    print("#####################")
 
-extract_and_replace_efermi_value(f"{wsoc_dos}/vasprun.xml", f"{wsoc_band}/vasprun.xml")
-# prepare_directory(f"{wsoc_plots}")
-plot_band_structure(f"{wsoc_band}/vasprun.xml", f"{wsoc_plots}/band.png")
-plot_projected(f"{wsoc_band}/vasprun.xml", f"{wsoc_plots}/band_projected.png")
+    extract_and_replace_efermi_value(f"{wsoc_dos}/vasprun.xml", f"{wsoc_band}/vasprun.xml")
+    plot_band_structure(f"{wsoc_band}/vasprun.xml", f"{wsoc_plots}/band.png")
+    # plot_projected(f"{wsoc_band}/vasprun.xml",f"{wsoc_band}/KPOINTS", f"{wsoc_plots}/band_projected.png")
 
 # Step 5: Band Structure with SOC_scf
-prepare_directory(soc_scf)
-shutil.copy(f"{wsoc_scf}/POSCAR", f"{soc_scf}/")
-shutil.copy(f"{wsoc_scf}/INCAR", f"{soc_scf}/")
-shutil.copy(f"{wsoc_scf}/POTCAR", f"{soc_scf}/")
-shutil.copy(f"{wsoc_scf}/KPOINTS", f"{soc_scf}/")
+def soc_scf_calculation():
+    prepare_directory(soc_scf)
+    shutil.copy(f"{wsoc_scf}/POSCAR", f"{soc_scf}/")
+    shutil.copy(f"{wsoc_scf}/INCAR", f"{soc_scf}/")
+    shutil.copy(f"{wsoc_scf}/POTCAR", f"{soc_scf}/")
+    shutil.copy(f"{wsoc_scf}/KPOINTS", f"{soc_scf}/")
 
-# shutil.copy("job_ncl.sh", f"{soc_scf}/")
+    # shutil.copy("job_ncl.sh", f"{soc_scf}/")
 
-# modify_magmom(f"{soc_scf}/INCAR")
-modify_nbands_soc(f"{soc_scf}/INCAR", f"{relax}/OUTCAR")
+    # modify_magmom(f"{soc_scf}/INCAR")
+    modify_nbands_soc(f"{soc_scf}/INCAR", f"{relax}/OUTCAR")
 
-modify_incar_from_dict(f"{soc_scf}/INCAR", {
-'LSORBIT': '.TRUE.',
-'GGA_COMPAT': '.FALSE.',
-})
+    modify_incar_from_dict(f"{soc_scf}/INCAR", {
+    'LSORBIT': '.TRUE.',
+    'GGA_COMPAT': '.FALSE.',
+    })
 
-print("#####################")
+    print("#####################")
 
-print("calculation for band_soc_scf")
-shutil.copy(job_ncl, soc_scf)
-run_vasp_calculation(f"{soc_scf}", "job_ncl.sh")
+    print("calculation for band_soc_scf")
+    shutil.copy(job_ncl, soc_scf)
+    run_vasp_calculation(f"{soc_scf}", "job_ncl.sh")
 
-print("#####################")
+    print("#####################")
 
 
 # Step 6: Band Structure with SOC_non_scf
-prepare_directory(soc_band)
-shutil.copy(f"{soc_scf}/POSCAR", f"{soc_band}/")
-shutil.copy(f"{soc_scf}/INCAR", f"{soc_band}/")
-shutil.copy(f"{soc_scf}/POTCAR", f"{soc_band}/")
-shutil.copy(f"{wsoc_band}/KPOINTS", f"{soc_band}/")
-shutil.copy(f"{soc_scf}/CHGCAR", f"{soc_band}/")
-shutil.copy(f"{soc_scf}/WAVECAR", f"{soc_band}/")
+def soc_band_calculation():
+    prepare_directory(soc_band)
+    shutil.copy(f"{soc_scf}/POSCAR", f"{soc_band}/")
+    shutil.copy(f"{soc_scf}/INCAR", f"{soc_band}/")
+    shutil.copy(f"{soc_scf}/POTCAR", f"{soc_band}/")
+    shutil.copy(f"{wsoc_band}/KPOINTS", f"{soc_band}/")
+    shutil.copy(f"{soc_scf}/CHGCAR", f"{soc_band}/")
+    shutil.copy(f"{soc_scf}/WAVECAR", f"{soc_band}/")
 
-# shutil.copy("job_ncl.sh", f"{soc_band}/")
+    # shutil.copy("job_ncl.sh", f"{soc_band}/")
 
-modify_incar_from_dict(f"{soc_band}/INCAR", {'ISTART': 1, 'ICHARG': 11})
+    modify_incar_from_dict(f"{soc_band}/INCAR", {'ISTART': 1, 'ICHARG': 11, 'LWAVE': '.FALSE.'})
 
-print("#####################")
+    print("#####################")
 
-print("calculation for band_soc")
-shutil.copy(job_ncl, soc_band)
-run_vasp_calculation(f"{soc_band}", "job_ncl.sh")
+    print("calculation for band_soc")
+    shutil.copy(job_ncl, soc_band)
+    run_vasp_calculation(f"{soc_band}", "job_ncl.sh")
 
-print("#####################")
+    print("#####################")
 
-prepare_directory(f"{soc_plots}")
-extract_and_replace_efermi_value(f"{soc_scf}/vasprun.xml", f"{soc_band}/vasprun.xml")
-plot_band_structure(f"{soc_band}/vasprun.xml", f"{soc_plots}/band.png")
+    prepare_directory(f"{soc_plots}")
+    extract_and_replace_efermi_value(f"{soc_scf}/vasprun.xml", f"{soc_band}/vasprun.xml")
+    plot_band_structure(f"{soc_band}/vasprun.xml", f"{soc_plots}/band.png")
 
 
 ## Finally copies the completed cif file to calculated directory with same name as in calculations directory.
-shutil.copy(cif_file, "../calculated/")
-directory = "../calculated/"
-old_filename = cif_file
-new_filename = main_directory
+def final_calculation():
+    shutil.copy(cif_file, "../calculated/")
+    directory = "../calculated/"
+    old_filename = cif_file
+    new_filename = main_directory
 
-rename_file(directory, old_filename, new_filename)
+    rename_file(directory, old_filename, new_filename)
 
-print("Completed Successfully")
+    print("Completed Successfully")
 
-
+relaxation()
+wsoc_scf_calculation()
+wsoc_dos_calculation()
+wsoc_band_calculation()
+soc_scf_calculation()
+soc_band_calculation()
+final_calculation()
